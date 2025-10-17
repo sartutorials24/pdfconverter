@@ -1,16 +1,17 @@
 import os
-import io
+from dotenv import load_dotenv
 import requests
-from telegram import Update, InputFile
+from telegram import Update
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 import streamlit as st
 from io import BytesIO
 
-# Cloudmersive API Keys (replace with your actual key)
-CLOUDMERSIVE_API_KEY = 'your-cloudmersive-api-key'
+# Load environment variables from .env file
+load_dotenv()
 
-# Telegram Bot Token
-TELEGRAM_API_TOKEN = 'your-telegram-bot-token'
+# Get the Telegram API token from the .env file
+TELEGRAM_API_TOKEN = os.getenv("TELEGRAM_API_TOKEN")
+CLOUDMERSIVE_API_KEY = os.getenv("CLOUDMERSIVE_API_KEY")
 
 # Initialize the Telegram Bot
 def start(update: Update, context: CallbackContext):
