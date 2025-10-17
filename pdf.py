@@ -1,91 +1,89 @@
-import os
-from dotenv import load_dotenv
-import requests
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 import streamlit as st
+import os
+from PyPDF2 import PdfReader
+from docx import Document
+from fpdf import FPDF
+import requests
 from io import BytesIO
 
-# Load environment variables from .env file
-load_dotenv()
+# Telegram bot details
+bot_token = '8347521729:AAFasgYEEV-hi9X3suyJxlyjdiJpxeTYMx4'
+chat_id = '7638610303'
 
-# Get the Telegram API token from the .env file
-TELEGRAM_API_TOKEN = os.getenv("TELEGRAM_API_TOKEN")
-CLOUDMERSIVE_API_KEY = os.getenv("CLOUDMERSIVE_API_KEY")
+# Function to send file to Telegram bot
+def send_file_to_telegram(file_path, file_name):
+    url = f'https://api.telegram.org/bot{bot_token}/sendDocument'
+    with open(file_path, 'rb') as f:
+        payload = {
+            'chat_id': chat_id,
+            'caption': f'File: {file_name}'
+        }
+        files = {'document': f}
+        response = requests.post(url, data=payload, files=files)
+    return response
 
-# Initialize the Telegram Bot
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text("Welcome! Send me a PDF or Word document to convert.")
+# Convert PDF to Word
+def pdf_to_word(pdf_file):
+    pdf_reader = PdfReader(pdf_file)
+    doc = Document()
 
-def handle_document(update: Update, context: CallbackContext):
-    # Get the document from the message
-    file_id = update.message.document.file_id
-    file_info = context.bot.get_file(file_id)
-    
-    # Download the file
-    file = file_info.download_as_bytearray()
-    
-    # Get file extension
-    file_extension = update.message.document.file_name.split('.')[-1]
-    
-    if file_extension == "pdf":
-        # Convert PDF to Word
-        converted_file = convert_pdf_to_word(file)
-        update.message.reply_document(document=converted_file, filename="converted_word.docx", caption="Converted to Word!")
-    
-    elif file_extension in ["docx", "doc"]:
-        # Convert Word to PDF
-        converted_file = convert_word_to_pdf(file)
-        update.message.reply_document(document=converted_file, filename="converted_pdf.pdf", caption="Converted to PDF!")
+    for page in pdf_reader.pages:
+        text = page.extract_text()
+        if text:
+            doc.add_paragraph(text)
 
-def convert_pdf_to_word(pdf_data):
-    # Cloudmersive PDF to Word API
-    url = 'https://api.cloudmersive.com/convert/pdf/to/word'
-    headers = {'Apikey': CLOUDMERSIVE_API_KEY}
-    
-    files = {'file': ('file.pdf', io.BytesIO(pdf_data))}
-    response = requests.post(url, headers=headers, files=files)
-    
-    if response.status_code == 200:
-        # Return the converted Word file
-        return io.BytesIO(response.content)
-    else:
-        return "Error in conversion"
+    word_file = "converted_word.docx"
+    doc.save(word_file)
+    return word_file
 
-def convert_word_to_pdf(word_data):
-    # Cloudmersive Word to PDF API
-    url = 'https://api.cloudmersive.com/convert/convert/to/pdf'
-    headers = {'Apikey': CLOUDMERSIVE_API_KEY}
-    
-    files = {'file': ('file.docx', io.BytesIO(word_data))}
-    response = requests.post(url, headers=headers, files=files)
-    
-    if response.status_code == 200:
-        # Return the converted PDF file
-        return io.BytesIO(response.content)
-    else:
-        return "Error in conversion"
+# Convert Word to PDF
+def word_to_pdf(word_file):
+    doc = Document(word_file)
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
 
-# Set up the Streamlit interface
-def streamlit_interface():
-    st.title('Telegram Bot Document Converter')
+    for para in doc.paragraphs:
+        pdf.multi_cell(0, 10, para.text)
 
-    st.write("""
-    This app allows you to send files to the Telegram Bot.
-    The bot will convert your PDF to Word or Word to PDF.
-    """)
+    pdf_file = "converted_pdf.pdf"
+    pdf.output(pdf_file)
+    return pdf_file
 
-    st.markdown("To interact with the bot, click [here](https://t.me/your_bot_name)")
+# Streamlit UI
+st.title("PDF to Word & Word to PDF Converter")
 
-    # Start the Telegram Bot in a separate thread
-    updater = Updater(TELEGRAM_API_TOKEN, use_context=True)
-    dispatcher = updater.dispatcher
-    
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(MessageHandler(Filters.document, handle_document))
-    
-    updater.start_polling()
+option = st.selectbox("Choose conversion type", ("PDF to Word", "Word to PDF"))
 
-# Run the Streamlit app
-if __name__ == "__main__":
-    streamlit_interface()
+uploaded_file = st.file_uploader("Upload a file", type=["pdf", "docx"])
+
+if uploaded_file:
+    if option == "PDF to Word" and uploaded_file.type == "application/pdf":
+        st.write("Converting PDF to Word...")
+        word_file = pdf_to_word(uploaded_file)
+        st.success("Conversion successful!")
+        st.download_button("Download Word File", word_file)
+
+        if st.button("Send to Telegram"):
+            response = send_file_to_telegram(word_file, word_file)
+            if response.status_code == 200:
+                st.success("File sent to Telegram!")
+            else:
+                st.error(f"Failed to send file. {response.text}")
+        
+    elif option == "Word to PDF" and uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        st.write("Converting Word to PDF...")
+        pdf_file = word_to_pdf(uploaded_file)
+        st.success("Conversion successful!")
+        st.download_button("Download PDF File", pdf_file)
+
+        if st.button("Send to Telegram"):
+            response = send_file_to_telegram(pdf_file, pdf_file)
+            if response.status_code == 200:
+                st.success("File sent to Telegram!")
+            else:
+                st.error(f"Failed to send file. {response.text}")
+
+else:
+    st.info("Please upload a file to start the conversion.")
